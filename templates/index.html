@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budgee</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <!-- Add marked library for markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Add highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Budgee Logo" class="logo">
+                <h1>Budgee</h1>
+            </div>
+            <p class="subtitle">Upload a text file to analyze your financial data with AI</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="input-panel">
+                <div class="prompt-section">
+                    <label for="system-prompt">System Prompt</label>
+                    <textarea id="system-prompt" rows="5">You are a personal finance assistant. 
+Your tasks:
+1) Analyze the user's spending history and provide insights into their habits.
+2) Identify and label any recurring or automated transactions (e.g., daily commute costs, subscriptions).
+3) Based on the analysis, propose a tailored weekly saving challenge for the user, detailing specific actions to reduce expenses and reach savings goals.
+Format your response clearly, using tables or lists where helpful.</textarea>
+                    
+                    <label for="user-prompt">Additional Instructions (Optional)</label>
+                    <textarea id="user-prompt" placeholder="Enter any additional instructions or questions about the text..."></textarea>
+                </div>
+                
+                <div class="file-upload-section">
+                    <label for="file-upload">Upload Text File</label>
+                    <div class="upload-container">
+                        <div class="upload-controls">
+                            <input type="file" id="file-upload" accept=".txt" onchange="updateFileName(this)">
+                            <button id="clear-file-btn" type="button" class="secondary-btn">Delete File</button>
+                        </div>
+                        <p id="file-name" class="file-name">No file chosen</p>
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="analyze-btn" onclick="analyzeText()">Analyze</button>
+                    <button id="clear-btn" onclick="clearChat()" class="secondary-btn">Clear Chat</button>
+                </div>
+                
+                <div id="error-message" class="error-message"></div>
+            </div>
+            
+            <div class="chat-panel">
+                <div class="chat-header">
+                    <h2>Analysis Results</h2>
+                </div>
+                <div class="messages" id="chat-container">
+                    <div class="message system">
+                        <p>Welcome to Budgee. Upload a text file to begin financial analysis.</p>
+                    </div>
+                </div>
+                <div class="loading-message" id="loading" style="display: none;">
+                    <p>Processing your request</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Configuration for marked.js
+        marked.setOptions({
+            renderer: new marked.Renderer(),
+            highlight: function(code, language) {
+                const validLanguage = hljs.getLanguage(language) ? language : 'plaintext';
+                return hljs.highlight(validLanguage, code).value;
+            },
+            pedantic: false,
+            gfm: true,
+            breaks: true,
+            sanitize: false,
+            smartypants: false,
+            xhtml: false
+        });
+    
+        // Update file name display when a file is selected
+        function updateFileName(input) {
+            const fileNameElement = document.getElementById('file-name');
+            if (input.files.length > 0) {
+                fileNameElement.textContent = input.files[0].name;
+                document.getElementById('clear-file-btn').style.display = 'inline-block';
+            } else {
+                fileNameElement.textContent = 'No file chosen';
+                document.getElementById('clear-file-btn').style.display = 'none';
+            }
+        }
+        
+        // Clear file functionality
+        document.getElementById('clear-file-btn').addEventListener('click', function() {
+            document.getElementById('file-upload').value = '';
+            document.getElementById('file-name').textContent = 'No file chosen';
+            this.style.display = 'none';
+        });
+        
+        // Initially hide the clear file button
+        document.getElementById('clear-file-btn').style.display = 'none';
+        
+        // Analyze the text file
+        function analyzeText() {
+            const systemPrompt = document.getElementById('system-prompt').value;
+            const userPrompt = document.getElementById('user-prompt').value;
+            const fileInput = document.getElementById('file-upload');
+            const errorElement = document.getElementById('error-message');
+            
+            // Validate file input
+            if (!fileInput.files || fileInput.files.length === 0) {
+                errorElement.textContent = 'Please upload a text file';
+                return;
+            }
+            
+            // Clear any previous errors
+            errorElement.textContent = '';
+            
+            // Show loading indicator
+            document.getElementById('loading').style.display = 'block';
+            
+            // Create form data
+            const formData = new FormData();
+            formData.append('system_prompt', systemPrompt);
+            formData.append('user_prompt', userPrompt);
+            formData.append('text_file', fileInput.files[0]);
+            
+            // Add user message to chat
+            addMessage('user', `Uploaded file: ${fileInput.files[0].name}${userPrompt ? ' - ' + userPrompt : ''}`);
+            
+            // Send request to server
+            fetch('/analyze', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading indicator
+                document.getElementById('loading').style.display = 'none';
+                
+                if (data.error) {
+                    errorElement.textContent = `Error: ${data.error}`;
+                } else {
+                    // Add assistant message to chat
+                    addMessage('response', formatMessage(data.response));
+                }
+            })
+            .catch(error => {
+                // Hide loading indicator
+                document.getElementById('loading').style.display = 'none';
+                
+                errorElement.textContent = `Error: ${error.message}`;
+                console.error('Error:', error);
+            });
+        }
+        
+        // Add a message to the chat container
+        function addMessage(type, content) {
+            const chatContainer = document.getElementById('chat-container');
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', type);
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('message-content');
+            contentDiv.innerHTML = content;
+            
+            messageDiv.appendChild(contentDiv);
+            chatContainer.appendChild(messageDiv);
+            
+            // Apply syntax highlighting to any code blocks
+            messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightBlock(block);
+            });
+            
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        
+        // Format the message using markdown
+        function formatMessage(message) {
+            // Special handling for code blocks with json
+            message = message.replace(/```json([\s\S]*?)```/g, function(match, code) {
+                return '```json\n' + code.trim() + '\n```';
+            });
+            
+            // Convert markdown to HTML using marked
+            const html = marked.parse(message);
+            
+            return html;
+        }
+        
+        // Clear the chat history
+        function clearChat() {
+            // Clear the chat container - keep the welcome message
+            const chatContainer = document.getElementById('chat-container');
+            while (chatContainer.childNodes.length > 1) {
+                chatContainer.removeChild(chatContainer.lastChild);
+            }
+            
+            // Send request to clear history on the server
+            fetch('/clear_history', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Chat history cleared');
+            })
+            .catch(error => {
+                console.error('Error clearing chat history:', error);
+            });
+        }
+    </script>
+</body>
+</html> 
