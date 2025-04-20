@@ -21,7 +21,6 @@ wheels/
 *.egg
 
 # Environment variables - protect your API keys!
-.env
 .venv
 env/
 venv/
